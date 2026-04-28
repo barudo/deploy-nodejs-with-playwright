@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+.auth/
 *.pem
 *.key
 *service-account*.json

@@ -1,4 +1,4 @@
-# Deploy Node.js Google Search Console Report Job
+# Deploy Node.js Google Search Console Report Job With Playwright
 
 Upwork Task ID: 30054886
 
@@ -10,62 +10,53 @@ Attached is the script. Please check and let me know if this can be done.
 
 ## Solution
 
-This root folder contains a cloud-ready Node.js solution that exports Google Search Console data through the official Search Console API instead of browser automation.
+This project uses Playwright to open Google Search Console, authenticate to Google, visit configured Search Console drilldown reports, scrape report rows from the UI, and write a CSV file.
 
-The attached Playwright script in `attachments/code.txt` is useful as a reference, but it is not ideal for scheduled cloud execution because it depends on interactive Google login, possible 2-step verification, visible browser mode, and fragile Google UI selectors. The API approach is the reliable path for Google Cloud or AWS Lambda.
+The original attached script in `attachments/code.txt` used Playwright in a local headed Firefox browser and left the CSV write commented out. This version keeps the Playwright approach, but makes it cloud-ready:
 
-## Note About Playwright
+- runs headless by default
+- supports Chromium, Firefox, or WebKit
+- writes CSV output
+- can upload CSV output to Google Cloud Storage or S3
+- exposes an HTTP entrypoint for Cloud Run, Google Cloud Functions, or AWS Lambda style handlers
+- supports saved Playwright browser state to reduce repeated Google login prompts
 
-The original attached script uses Playwright to open Google Search Console in a browser, log in, navigate report pages, and scrape report data from the page using CSS selectors.
+## Important Playwright Notes
 
-That means Playwright was being used for browser scraping. The script collected the report rows, but the CSV writing line was commented out, so it did not currently create the CSV unless that part was restored.
+Playwright can automate the Search Console UI, but Google login is the fragile part of this workflow. A scheduled job can fail if Google requires 2-step verification, CAPTCHA, device approval, or a fresh login challenge.
 
-For this solution, Playwright is not used. The root project uses the official Google Search Console API to fetch the report data and create the CSV directly. This is more reliable for scheduled cloud deployment because it avoids browser login, 2-step verification, UI selector changes, and browser runtime packaging issues.
+For the most reliable Playwright deployment, run a local login once with `npm run login`, save the browser state file, and provide that state securely to the cloud runtime. Do not commit `.env` files, passwords, or `.auth/` browser state files.
 
 ## What This Exports
 
-The app calls the Search Console Search Analytics API and writes a CSV report with these default dimensions:
+The scraper visits each report configured in `GSC_REPORTS_JSON`.
 
-- `query`
-- `page`
-- `country`
-- `device`
+Each CSV row includes:
 
-Each row includes:
+- `status`
+- `report name`
+- `url`
+- `updated`
 
-- `clicks`
-- `impressions`
-- `ctr`
-- `position`
+The default selectors match the original script:
 
-By default, it exports the last 7 complete days.
+- report row selector: `.OOHai`
+- updated date selector: `.zTJZxd.zOPr2c`
+
+If Google changes the Search Console UI, update `GSC_REPORT_SELECTOR` and `GSC_UPDATED_SELECTOR`.
 
 ## Files
 
 - `src/index.js` - local CLI entrypoint
-- `src/server.js` - HTTP server for Cloud Run, Google Cloud Functions, and AWS Lambda handler export
+- `src/login.js` - local headed login helper that saves Playwright storage state
+- `src/server.js` - HTTP server and AWS Lambda handler export
 - `src/job.js` - reusable report job
-- `src/gsc.js` - Google Search Console API client
+- `src/playwright-gsc.js` - Playwright Search Console scraper
 - `src/storage.js` - writes CSV locally, to Google Cloud Storage, or to S3
 - `.env.example` - environment variable template
-- `Dockerfile` - container for Google Cloud Run
+- `Dockerfile` - Playwright container for Cloud Run or other container platforms
 
-## Authentication
-
-Create a Google Cloud service account and grant it access to the Search Console property:
-
-1. Enable the Google Search Console API in the Google Cloud project.
-2. Create a service account.
-3. Add the service account email as a user on the Search Console property.
-4. Use Application Default Credentials locally, or attach the service account to Cloud Run / Cloud Functions.
-
-For local testing:
-
-```bash
-gcloud auth application-default login
-```
-
-## Local Run
+## Local Setup
 
 Install dependencies:
 
@@ -82,13 +73,118 @@ cp .env.example .env
 Set at least:
 
 ```bash
-SITE_URL=https://example.com/
+SITE_URL=sc-domain:example.com
+GOOGLE_EMAIL=person@example.com
+GOOGLE_PASSWORD=change-me
+GSC_REPORTS_JSON=[{"category":"Indexing","name":"Pages drilldown","param":"REAL_ITEM_KEY_VALUE"}]
 ```
 
-Run:
+## Find The Search Console `item_key`
+
+For a Pages drilldown report:
+
+1. Open `https://search.google.com/search-console`.
+2. Select the Search Console property, for example `sc-domain:brevph.com`.
+3. Open `Pages` from the left navigation.
+4. Click a specific row or issue inside the Pages report. The top-level Pages URL usually does not have `item_key`.
+5. After clicking into the detail/drilldown page, copy the value after `item_key=` from the browser address bar.
+
+Example URL:
+
+```text
+https://search.google.com/search-console/index/drilldown?resource_id=sc-domain%3Abrevph.com&item_key=CAMYCyAC
+```
+
+The `item_key` is:
+
+```text
+CAMYCyAC
+```
+
+Use the raw `item_key` in `.env`:
+
+```env
+GSC_REPORTS_JSON=[{"category":"Indexing","name":"Pages drilldown","param":"CAMYCyAC"}]
+```
+
+The full Search Console URL also works:
+
+```json
+[{"category":"Indexing","name":"Pages drilldown","param":"https://search.google.com/search-console/index/drilldown?resource_id=sc-domain%3Abrevph.com&item_key=CAMYCyAC"}]
+```
+
+For the Pages overview, a URL without `item_key` is accepted by the scraper, but it may not contain the same rows as a specific drilldown page:
+
+```json
+[{"category":"Indexing","name":"Pages","param":"https://search.google.com/search-console/index?resource_id=sc-domain%3Abrevph.com"}]
+```
+
+Do not use placeholder text or the literal example below:
+
+```text
+item_key=ITEM_KEY_FROM_GSC_URL
+REAL_ITEM_KEY_VALUE
+```
+
+## Save A Browser Session
+
+Google often blocks fully automated login. The expected workflow is to create a browser session locally, then reuse it for scheduled runs.
+
+Use headed mode for manual login:
+
+```env
+PLAYWRIGHT_HEADLESS=false
+```
+
+If you want Playwright to open installed Google Chrome:
+
+```env
+PLAYWRIGHT_BROWSER=chromium
+PLAYWRIGHT_CHANNEL=chrome
+PLAYWRIGHT_HEADLESS=false
+PLAYWRIGHT_DISABLE_AUTOMATION_CONTROLLED=true
+```
+
+Run the login helper:
+
+```bash
+npm run login
+```
+
+Complete any Google prompt in the opened browser, including 2-step verification, device approval, or account selection. When the login succeeds, the helper saves session state to:
+
+```text
+./.auth/gsc-state.json
+```
+
+The scraper automatically loads this file on future runs through `STORAGE_STATE_PATH`.
+
+If Google Chrome says the browser or app is not secure, Google has rejected that Playwright-controlled Chrome session. Try Firefox for the login step:
+
+```env
+PLAYWRIGHT_BROWSER=firefox
+# leave PLAYWRIGHT_CHANNEL unset
+PLAYWRIGHT_HEADLESS=false
+```
+
+Then run `npm run login` again. The scheduled scraper can reuse the saved `STORAGE_STATE_PATH`.
+
+Some Chromium setups can get past this by launching with `--disable-blink-features=AutomationControlled` and a current desktop user agent. This project enables that Chromium flag by default through `PLAYWRIGHT_DISABLE_AUTOMATION_CONTROLLED=true`. If needed, set `PLAYWRIGHT_USER_AGENT` to a current desktop Chrome user agent string.
+
+Do not commit `.auth/gsc-state.json`. It contains authenticated browser session data.
+
+## Local Run
+
+Run the scraper:
 
 ```bash
 npm start
+```
+
+Successful output looks like:
+
+```text
+Extracted Pages drilldown: 10 rows
 ```
 
 The default local output is:
@@ -97,52 +193,16 @@ The default local output is:
 ./reports/gsc-report.csv
 ```
 
-### Fix `Insufficient Permission`
-
-If local testing fails with `GaxiosError: Insufficient Permission` and the response says `insufficient_scope`, refresh Application Default Credentials with the Search Console scope:
-
-```bash
-gcloud auth application-default revoke
-gcloud auth application-default login \
-  --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/webmasters.readonly
-```
-
-Then run:
-
-```bash
-npm start
-```
-
-The authenticated Google account must also be added as a user on the exact Search Console property from `SITE_URL`.
-
-### Fix Missing Quota Project
-
-If local testing fails with `requires a quota project`, set a Google Cloud project as the ADC quota project:
-
-```bash
-gcloud config set project YOUR_PROJECT_ID
-gcloud services enable searchconsole.googleapis.com
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
-```
-
-Then run:
-
-```bash
-npm start
-```
-
-`YOUR_PROJECT_ID` must be a Google Cloud project where you have permission to enable APIs and use quota.
-
 ## Google Cloud Run Deployment
 
-Build and deploy:
+Build and deploy the Playwright container:
 
 ```bash
 gcloud run deploy gsc-report-job \
   --source . \
   --region us-central1 \
   --set-env-vars SITE_URL=https://example.com/,GCS_BUCKET=my-report-bucket \
-  --service-account my-service-account@my-project.iam.gserviceaccount.com
+  --set-env-vars 'GSC_REPORTS_JSON=[{"category":"Indexing","name":"Example report","param":"EXAMPLE_ITEM_KEY"}]'
 ```
 
 Create a scheduled trigger:
@@ -157,22 +217,17 @@ gcloud scheduler jobs create http gsc-report-daily \
 
 Set `GCS_BUCKET` to write reports to Google Cloud Storage.
 
+For production, also provide either `GOOGLE_EMAIL` and `GOOGLE_PASSWORD` through a secret manager, or mount/provide the saved `STORAGE_STATE_PATH` file securely. Avoid putting Google credentials directly in deploy commands or source control.
+
 ## Google Cloud Functions Deployment
 
-Deploy the exported HTTP function:
+Deploying Playwright directly to Cloud Functions can be harder than Cloud Run because browser dependencies must be packaged correctly. Prefer Cloud Run for this project. If Cloud Functions is required, use a Gen 2 function with a custom container or verify the Playwright browser dependencies are present.
 
-```bash
-gcloud functions deploy runGscReport \
-  --gen2 \
-  --runtime nodejs20 \
-  --region us-central1 \
-  --trigger-http \
-  --entry-point runGscReport \
-  --set-env-vars SITE_URL=https://example.com/,GCS_BUCKET=my-report-bucket \
-  --service-account my-service-account@my-project.iam.gserviceaccount.com
+The exported HTTP function is:
+
+```text
+runGscReport
 ```
-
-Then trigger it with Cloud Scheduler.
 
 ## AWS Lambda Deployment
 
@@ -187,26 +242,33 @@ Required AWS environment variables:
 ```bash
 SITE_URL=https://example.com/
 S3_BUCKET=my-report-bucket
+GSC_REPORTS_JSON=[{"category":"Indexing","name":"Example report","param":"EXAMPLE_ITEM_KEY"}]
 ```
 
-The Lambda role needs permission to write to the target S3 bucket. Google credentials must also be provided to the function, usually through a service account JSON secret exposed as `GOOGLE_APPLICATION_CREDENTIALS` or through workload identity federation.
+AWS Lambda requires a compatible Playwright browser package or layer. In practice, a container image Lambda is usually easier than a zip deployment for Playwright.
 
-Use EventBridge Scheduler to run the Lambda automatically.
+For production, provide Google credentials through AWS Secrets Manager or provide the saved Playwright storage state file securely.
 
 ## Environment Variables
 
 - `SITE_URL` - required Search Console property URL, for example `https://example.com/` or `sc-domain:example.com`
-- `START_DATE` - optional report start date, `YYYY-MM-DD`
-- `END_DATE` - optional report end date, `YYYY-MM-DD`
-- `REPORT_DIMENSIONS` - optional comma-separated dimensions
-- `DIMENSION_FILTER_GROUPS` - optional JSON filter groups for the Search Console API
-- `ROW_LIMIT` - optional row limit, default `25000`
+- `GOOGLE_EMAIL` - Google account email for direct login
+- `GOOGLE_PASSWORD` - Google account password for direct login
+- `GSC_REPORTS_JSON` - required JSON array of report objects with `category`, `name`, and `param`
+- `GSC_REPORT_SELECTOR` - optional CSS selector for report rows, default `.OOHai`
+- `GSC_UPDATED_SELECTOR` - optional CSS selector for the updated date, default `.zTJZxd.zOPr2c`
+- `PLAYWRIGHT_BROWSER` - optional browser, `chromium`, `firefox`, or `webkit`, default `chromium`
+- `PLAYWRIGHT_CHANNEL` - optional Chromium channel, for example `chrome` to open installed Google Chrome
+- `PLAYWRIGHT_DISABLE_AUTOMATION_CONTROLLED` - optional Chromium flag for Google login compatibility, default `true`
+- `PLAYWRIGHT_USER_AGENT` - optional user agent override for Playwright contexts
+- `PLAYWRIGHT_HEADLESS` - optional, default `true`
+- `STORAGE_STATE_PATH` - optional saved browser state path, default `./.auth/gsc-state.json`
+- `LOGIN_TIMEOUT_MS` - optional Google login timeout, default `120000`
+- `NAVIGATION_TIMEOUT_MS` - optional page navigation timeout, default `60000`
+- `START_DATE` - optional date used in output filenames, `YYYY-MM-DD`
+- `END_DATE` - optional date used in output filenames, `YYYY-MM-DD`
 - `OUTPUT_FILE` - optional local CSV path
 - `GCS_BUCKET` - optional Google Cloud Storage bucket
 - `GCS_PREFIX` - optional Google Cloud Storage object prefix
 - `S3_BUCKET` - optional AWS S3 bucket
 - `S3_PREFIX` - optional AWS S3 object prefix
-
-## Important Note About the Original Playwright Script
-
-The original script appears to target Search Console UI reports. Some UI-only reports may not map exactly to the public Search Console API. If the required report is specifically an indexing or coverage drilldown that is only visible in the UI, then Playwright can still be attempted on Cloud Run with a containerized headless browser, but it will be less reliable than the API solution.

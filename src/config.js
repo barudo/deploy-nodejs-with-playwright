@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
-const DEFAULT_DIMENSIONS = ['query', 'page', 'country', 'device'];
+const DEFAULT_REPORT_SELECTOR = '.OOHai';
+const DEFAULT_UPDATED_SELECTOR = '.zTJZxd.zOPr2c';
 
 export function getConfig(overrides = {}) {
   const env = { ...process.env, ...overrides };
@@ -11,9 +12,19 @@ export function getConfig(overrides = {}) {
     siteUrl,
     startDate,
     endDate,
-    dimensions: parseList(env.REPORT_DIMENSIONS, DEFAULT_DIMENSIONS),
-    dimensionFilterGroups: parseJson(env.DIMENSION_FILTER_GROUPS, []),
-    rowLimit: parseInteger(env.ROW_LIMIT, 25000),
+    googleEmail: env.GOOGLE_EMAIL,
+    googlePassword: env.GOOGLE_PASSWORD,
+    reports: parseJson(env.GSC_REPORTS_JSON, [], 'GSC_REPORTS_JSON'),
+    reportSelector: env.GSC_REPORT_SELECTOR || DEFAULT_REPORT_SELECTOR,
+    updatedSelector: env.GSC_UPDATED_SELECTOR || DEFAULT_UPDATED_SELECTOR,
+    playwrightBrowser: env.PLAYWRIGHT_BROWSER || 'chromium',
+    playwrightChannel: env.PLAYWRIGHT_CHANNEL,
+    playwrightUserAgent: env.PLAYWRIGHT_USER_AGENT,
+    playwrightDisableAutomationControlled: parseBoolean(env.PLAYWRIGHT_DISABLE_AUTOMATION_CONTROLLED, true),
+    playwrightHeadless: parseBoolean(env.PLAYWRIGHT_HEADLESS, true),
+    navigationTimeoutMs: parseInteger(env.NAVIGATION_TIMEOUT_MS, 60000),
+    loginTimeoutMs: parseInteger(env.LOGIN_TIMEOUT_MS, 120000),
+    storageStatePath: env.STORAGE_STATE_PATH || './.auth/gsc-state.json',
     outputFile: env.OUTPUT_FILE || './reports/gsc-report.csv',
     gcsBucket: env.GCS_BUCKET,
     gcsPrefix: trimSlashes(env.GCS_PREFIX || 'gsc-reports'),
@@ -78,7 +89,15 @@ function parseInteger(value, fallback) {
   return parsed;
 }
 
-function parseJson(value, fallback) {
+function parseBoolean(value, fallback) {
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+function parseJson(value, fallback, name) {
   if (!value) {
     return fallback;
   }
@@ -86,7 +105,7 @@ function parseJson(value, fallback) {
   try {
     return JSON.parse(value);
   } catch (error) {
-    throw new Error(`Invalid JSON in DIMENSION_FILTER_GROUPS: ${error.message}`);
+    throw new Error(`Invalid JSON in ${name}: ${error.message}`);
   }
 }
 

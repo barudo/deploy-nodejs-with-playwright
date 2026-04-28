@@ -1,9 +1,9 @@
-FROM node:20-slim
+FROM mcr.microsoft.com/playwright:v1.59.1-noble
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 COPY src ./src
 
