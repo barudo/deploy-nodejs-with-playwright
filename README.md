@@ -12,6 +12,14 @@ This root folder contains a cloud-ready Node.js solution that exports Google Sea
 
 The attached Playwright script in `attachments/code.txt` is useful as a reference, but it is not ideal for scheduled cloud execution because it depends on interactive Google login, possible 2-step verification, visible browser mode, and fragile Google UI selectors. The API approach is the reliable path for Google Cloud or AWS Lambda.
 
+## Note About Playwright
+
+The original attached script uses Playwright to open Google Search Console in a browser, log in, navigate report pages, and scrape report data from the page using CSS selectors.
+
+That means Playwright was being used for browser scraping. The script collected the report rows, but the CSV writing line was commented out, so it did not currently create the CSV unless that part was restored.
+
+For this solution, Playwright is not used. The root project uses the official Google Search Console API to fetch the report data and create the CSV directly. This is more reliable for scheduled cloud deployment because it avoids browser login, 2-step verification, UI selector changes, and browser runtime packaging issues.
+
 ## What This Exports
 
 The app calls the Search Console Search Analytics API and writes a CSV report with these default dimensions:
