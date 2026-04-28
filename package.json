@@ -1,0 +1,20 @@
+{
+  "name": "deploy-nodejs-gsc-report-cloud",
+  "version": "1.0.0",
+  "description": "Scheduled Google Search Console report exporter for Google Cloud or AWS Lambda.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "serve": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@google-cloud/storage": "^7.0.0",
+    "dotenv": "^16.0.0",
+    "googleapis": "^140.0.0"
+  }
+}
