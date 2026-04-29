@@ -81,6 +81,10 @@ GSC_REPORTS_JSON=[{"category":"Indexing","name":"Pages drilldown","param":"REAL_
 
 ## Find The Search Console `item_key`
 
+The screenshot below shows where the `item_key` appears in the Search Console drilldown page URL.
+
+![Google Search Console item_key screenshot](screenshot-get-item_key.png)
+
 For a Pages drilldown report:
 
 1. Open `https://search.google.com/search-console`.
