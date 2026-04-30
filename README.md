@@ -134,13 +134,7 @@ REAL_ITEM_KEY_VALUE
 
 Google often blocks fully automated login. The expected workflow is to create a browser session locally, then reuse it for scheduled runs.
 
-Use headed mode for manual login:
-
-```env
-PLAYWRIGHT_HEADLESS=false
-```
-
-If you want Playwright to open installed Google Chrome:
+For the local login step, set these values in `.env` so Playwright opens installed Google Chrome in visible mode:
 
 ```env
 PLAYWRIGHT_BROWSER=chromium
@@ -162,6 +156,12 @@ Complete any Google prompt in the opened browser, including 2-step verification,
 ```
 
 The scraper automatically loads this file on future runs through `STORAGE_STATE_PATH`.
+
+After the session is saved, scheduled or cloud runs can use headless mode again:
+
+```env
+PLAYWRIGHT_HEADLESS=true
+```
 
 If Google Chrome says the browser or app is not secure, Google has rejected that Playwright-controlled Chrome session. Try Firefox for the login step:
 
@@ -252,6 +252,58 @@ GSC_REPORTS_JSON=[{"category":"Indexing","name":"Example report","param":"EXAMPL
 AWS Lambda requires a compatible Playwright browser package or layer. In practice, a container image Lambda is usually easier than a zip deployment for Playwright.
 
 For production, provide Google credentials through AWS Secrets Manager or provide the saved Playwright storage state file securely.
+
+## AWS EventBridge Scheduling
+
+Use Amazon EventBridge Scheduler to invoke the Lambda function on a recurring schedule.
+
+EventBridge Scheduler needs an execution role that can invoke the Lambda function. The role trust policy should allow `scheduler.amazonaws.com`, and the permissions policy should allow `lambda:InvokeFunction` on the target function.
+
+Example permissions policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:gsc-report-job"
+    }
+  ]
+}
+```
+
+Create a daily schedule:
+
+```bash
+aws scheduler create-schedule \
+  --name gsc-report-daily \
+  --schedule-expression "rate(1 day)" \
+  --flexible-time-window '{"Mode":"OFF"}' \
+  --target '{
+    "Arn": "arn:aws:lambda:us-east-1:123456789012:function:gsc-report-job",
+    "RoleArn": "arn:aws:iam::123456789012:role/eventbridge-scheduler-lambda-role",
+    "Input": "{\"source\":\"eventbridge-scheduler\"}"
+  }'
+```
+
+For a specific time, use a cron expression instead:
+
+```bash
+aws scheduler create-schedule \
+  --name gsc-report-weekday-morning \
+  --schedule-expression "cron(0 6 ? * MON-FRI *)" \
+  --schedule-expression-timezone "UTC" \
+  --flexible-time-window '{"Mode":"OFF"}' \
+  --target '{
+    "Arn": "arn:aws:lambda:us-east-1:123456789012:function:gsc-report-job",
+    "RoleArn": "arn:aws:iam::123456789012:role/eventbridge-scheduler-lambda-role",
+    "Input": "{\"source\":\"eventbridge-scheduler\"}"
+  }'
+```
+
+Replace the account ID, region, Lambda function ARN, and scheduler role ARN with the deployed AWS resources.
 
 ## Environment Variables
 
